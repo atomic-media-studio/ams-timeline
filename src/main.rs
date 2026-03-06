@@ -600,6 +600,25 @@ impl eframe::App for TimelineApp {
                         None::<fn(String)>, // No track click handler for ruler
                         false, // Ruler is never selected
                     );
+                    
+                    // Marker track - same height as Ruler, starts right after Ruler
+                    tracks.next(ui).header(|ui| {
+                        // Add 4px top padding to match regular track headers
+                        ui.add_space(4.0);
+                        ui.label("Marker");
+                    }).show(
+                        |_timeline, ui| {
+                            // Allocate exactly 20px height (same as Ruler) for empty content
+                            const MARKER_HEIGHT: f32 = 20.0;
+                            let w = ui.available_rect_before_wrap().width();
+                            let desired_size = egui::Vec2::new(w, MARKER_HEIGHT);
+                            ui.allocate_exact_size(desired_size, egui::Sense::click());
+                        },
+                        None,
+                        None,
+                        None::<fn(String)>, // No track click handler for marker
+                        false, // Marker is never selected
+                    );
                 })
                 .tracks(
                     |tracks, _viewport, ui, playhead_api, selection_api| {
@@ -636,7 +655,7 @@ impl eframe::App for TimelineApp {
                             .with_id(track_id_clone.as_str())
                             .header(|ui| {
                                 // Add 4px top padding so input string is not too close to top border
-                                ui.add_space(4.0);
+                                ui.add_space(6.0);
                                 let mut name = track_name.clone();
                                 
                                 // Use horizontal layout for input string and buttons

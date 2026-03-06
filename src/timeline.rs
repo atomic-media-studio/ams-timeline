@@ -145,6 +145,9 @@ impl Show {
             ref mut ruler_bottom,
         } = self;
 
+        // Reset pinned track counter before rendering pinned tracks
+        tracks.reset_pinned_track_index();
+        
         // Use no spacing by default so we can get exact position for line separator.
         // The ruler will add its own 4px spacing after itself (same as regular tracks)
         ui.scope(|ui| {
@@ -158,11 +161,11 @@ impl Show {
         ui.spacing_mut().interact_size.y = 0.0;
         let rect = ui.available_rect_before_wrap();
         // FIX: ui.scope() adds 3px of spacing when it closes, so we need to subtract it
-        // The ruler adds 4px spacing correctly (ruler bottom + 4px)
+        // The last pinned track (Marker) adds 10px spacing correctly (marker bottom + 10px)
         // But after the scope, available_rect has an extra 3px from the scope
-        // So we subtract 3px to get the correct position (ruler bottom + 4px)
+        // So we subtract 3px to get the correct position (marker bottom + 10px)
         let corrected_position = rect.top() - 3.0;
-        // Store the position where the first track should start (4px below ruler's bottom border)
+        // Store the position where the first track should start (10px below marker's bottom border)
         *ruler_bottom = Some(corrected_position);
         // Force the UI to consume all available space up to this point to prevent extra spacing
         ui.allocate_space(egui::Vec2::new(0.0, 0.0));
@@ -198,27 +201,27 @@ impl Show {
         // Remove any default window padding that might add extra space
         ui.spacing_mut().window_margin = egui::Margin::same(0.0);
         let enable_scrolling = !ui.input(|i| i.modifiers.ctrl);
+        // Calculate where tracks should start: exactly 10px below marker's bottom border
+        // (Marker is the last pinned track, and it adds 10px spacing)
+        let tracks_start_y = ruler_bottom.as_ref().copied().unwrap_or(rect.top());
+        
         let res = egui::ScrollArea::vertical()
             .max_height(rect.height())
             .enable_scrolling(enable_scrolling)
             .animated(true)
             .stick_to_bottom(true) // stick to new tracks as they're added
             .show_viewport(ui, |ui, view| {
-                // FIX: The ScrollArea viewport starts 3px lower than expected
-                // Add a negative spacer to pull the content up by the gap
+                // Ensure ScrollArea content starts exactly where tracks should begin
+                // The marker (last pinned track) already adds 10px spacing, so tracks start at ruler_bottom (which is marker bottom + 10px)
                 let viewport_ui_top = ui.available_rect_before_wrap().top();
-                let ruler_bottom_pos = ruler_bottom.as_ref().copied().unwrap_or(0.0);
-                let gap = viewport_ui_top - ruler_bottom_pos;
-                if gap > 0.0 {
+                let gap = viewport_ui_top - tracks_start_y;
+                if gap != 0.0 {
+                    // Adjust to align exactly with tracks_start_y
                     ui.add_space(-gap);
                 }
                 
-                // FIX: Add 2px spacer so the first track's top border is visible (not hidden by ruler's spacing area)
-                // This ensures the border at 115.50 is clearly visible
-                ui.add_space(2.0);
-                
                 // Ensure no spacing between tracks - set all spacing to 0
-                // The ruler already adds 4px spacing, so we don't add any here
+                // The marker (last pinned track) already adds 10px spacing, so we don't add any here
                 ui.spacing_mut().item_spacing.y = 0.0;
                 ui.spacing_mut().interact_size.y = 0.0;
                 ui.spacing_mut().window_margin = egui::Margin::same(0.0);
@@ -226,34 +229,22 @@ impl Show {
             });
         let timeline_rect = tracks.timeline.full_rect;
         
-        // Calculate tracks_bottom, ensuring exactly 4px spacing from ruler when there are no tracks
-        // Note: We previously used an intermediate `gap` value here when compensating for ScrollArea spacing,
-        // but the current calculation no longer needs it. The logic now directly derives `tracks_bottom`
-        // from `res.inner_rect` and `content_size.y`.
+        // Calculate tracks_bottom: the actual bottom of the last track's border
+        // tracks_start_y is exactly 10px below marker's bottom border (ruler_bottom)
         let tracks_bottom = if res.content_size.y < 1.0 {
-            // No tracks: use the position where first track would start (4px below ruler's bottom border + 2px for border visibility)
-            // This ensures the playhead stops at the right position
-            ruler_bottom.unwrap_or(res.inner_rect.top()) + 2.0
+            // No tracks: use the position where first track would start (10px below marker's bottom border)
+            tracks_start_y
         } else {
             // Has tracks: calculate the actual bottom of the last track's border
-            // We added a 2px spacer at the start, so content_size.y includes that spacer
-            // The last track doesn't add spacing after itself, so the bottom is at tracks_top + (content_size.y - 2px spacer)
-            // But we need to account for the negative spacer too, so use the simpler calculation:
-            // The bottom is at the start of content (tracks_top) plus the actual track content height
-            // Since content_size includes the 2px spacer, we subtract it to get the actual track bottom
-            let actual_content_height = res.content_size.y - 2.0; // Subtract the 2px spacer we added
-            let tracks_top_pos = ruler_bottom.unwrap_or(res.inner_rect.top());
-            tracks_top_pos + actual_content_height
+            // content_size.y is the total height of all tracks (including their spacing)
+            // Since the last track doesn't add spacing after itself, the bottom is at tracks_start_y + content_size.y
+            tracks_start_y + res.content_size.y
         };
-        // Calculate tracks_top: where the first track starts (after ruler + spacing)
-        let tracks_top = ruler_bottom.unwrap_or(res.inner_rect.top());
+        // Calculate tracks_top: where the first track starts (exactly 10px below marker's bottom border)
+        let tracks_top = tracks_start_y;
         let mut set_playhead = SetPlayhead::new(timeline_rect, tracks_top, tracks_bottom);
         set_playhead.bottom_bar_rect = bottom_bar_rect;
         set_playhead.top_panel_rect = self.top_panel_rect;
-        // Store the full rect (including header) for redrawing the border
-        set_playhead.full_rect = Some(tracks.full_rect);
-        // Store the first track's selection rect for redrawing
-        set_playhead.first_track_selection_rect = tracks.first_track_selection_rect.borrow().clone();
         set_playhead
     }
 }
@@ -267,8 +258,6 @@ impl SetPlayhead {
         playhead: crate::playhead::Playhead,
     ) -> &Self {
         crate::playhead::set(ui, info, self.timeline_rect(), self.tracks_top(), self.tracks_bottom(), playhead);
-        // FIX: Redraw the first track's top border after the playhead to ensure it's visible on top
-        self.redraw_first_track_top_border(ui);
         self
     }
 

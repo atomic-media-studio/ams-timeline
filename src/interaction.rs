@@ -6,27 +6,43 @@ pub fn handle_scroll_and_zoom(
     timeline_rect: egui::Rect,
     timeline_api: &mut dyn crate::TimelineApi,
 ) {
-    if ui.rect_contains_pointer(timeline_rect) {
-        let ctrl_pressed = ui.input(|i| i.modifiers.ctrl);
-        let shift_pressed = ui.input(|i| i.modifiers.shift);
-        let smooth_delta = ui.input(|i| i.smooth_scroll_delta);
-        let raw_delta = ui.input(|i| i.raw_scroll_delta);
-        // When Ctrl is pressed, prefer raw_delta for more immediate response
-        // Otherwise, prefer smooth_delta for better UX
-        let delta = if ctrl_pressed {
-            if raw_delta != egui::Vec2::ZERO {
-                raw_delta
-            } else {
-                smooth_delta
-            }
+    // Check scroll deltas and modifiers FIRST, before checking pointer position
+    // This ensures pure vertical scrolling returns immediately without interfering with ScrollArea
+    let ctrl_pressed = ui.input(|i| i.modifiers.ctrl);
+    let shift_pressed = ui.input(|i| i.modifiers.shift);
+    let smooth_delta = ui.input(|i| i.smooth_scroll_delta);
+    let raw_delta = ui.input(|i| i.raw_scroll_delta);
+    
+    // Early return if it's pure vertical scrolling without modifiers - let ScrollArea handle it
+    // This MUST be checked first to avoid any interference with ScrollArea's scroll events
+    if !ctrl_pressed && !shift_pressed && smooth_delta.x == 0.0 && raw_delta.x == 0.0 {
+        return;
+    }
+    
+    // Only handle scroll if pointer is over timeline area AND there's horizontal movement or modifiers
+    if !ui.rect_contains_pointer(timeline_rect) {
+        return;
+    }
+    
+    // When Ctrl is pressed, prefer raw_delta for more immediate response
+    // Otherwise, prefer smooth_delta for better UX
+    let delta = if ctrl_pressed {
+        if raw_delta != egui::Vec2::ZERO {
+            raw_delta
         } else {
-            if smooth_delta != egui::Vec2::ZERO {
-                smooth_delta
-            } else {
-                raw_delta
-            }
-        };
-        if ctrl_pressed {
+            smooth_delta
+        }
+    } else {
+        if smooth_delta != egui::Vec2::ZERO {
+            smooth_delta
+        } else {
+            raw_delta
+        }
+    };
+    
+    // Only handle scroll events if there's horizontal movement or modifiers are pressed
+    // Pure vertical scrolling without modifiers should pass through to the ScrollArea
+    if ctrl_pressed {
             if delta.x != 0.0 || delta.y != 0.0 {
                 timeline_api.zoom(delta.y - delta.x);
             }
@@ -70,7 +86,6 @@ pub fn handle_scroll_and_zoom(
                 }
             }
         }
-    }
 }
 
 /// Handle clicks and drags on timeline area to set playhead.

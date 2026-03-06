@@ -1,4 +1,5 @@
 use egui::Rect;
+use std::cell::Cell;
 
 /// A context for instantiating tracks, either pinned or unpinned.
 pub struct TracksCtx {
@@ -9,8 +10,8 @@ pub struct TracksCtx {
     pub header_full_rect: Option<Rect>,
     /// Context specific to the timeline (non-header) area.
     pub timeline: TimelineCtx,
-    /// The first track's selection rect (for redrawing on top after border).
-    pub(crate) first_track_selection_rect: std::cell::RefCell<Option<Rect>>,
+    /// Counter for pinned tracks (0 = Ruler, 1 = Marker, etc.)
+    pinned_track_index: Cell<usize>,
 }
 
 /// Some context for the timeline, providing short-hand for setting some useful widgets.
@@ -30,6 +31,7 @@ pub struct TrackCtx<'a> {
     track_id: Option<String>,
     is_first_track: bool,
     is_last_track: bool,
+    pinned_track_index: Option<usize>, // None for regular tracks, Some(index) for pinned tracks
 }
 
 /// Context for instantiating the playhead after all tracks have been set.
@@ -41,12 +43,6 @@ pub struct SetPlayhead {
     /// tracks' scrollable area in the case that the size of the tracks
     /// exceed the visible height.
     tracks_bottom: f32,
-    /// The y position where the first track's top border should be drawn (for redrawing on top).
-    first_track_top_border_y: Option<f32>,
-    /// The full rect including header area (for redrawing border at full width).
-    pub(crate) full_rect: Option<Rect>,
-    /// The first track's selection rect (for redrawing on top after border).
-    pub(crate) first_track_selection_rect: Option<Rect>,
     /// The bottom bar rectangle (20px height at the bottom).
     pub(crate) bottom_bar_rect: Option<Rect>,
     /// The top panel rectangle (40px height at the top).
@@ -63,6 +59,16 @@ impl TracksCtx {
     /// Begin showing the next `Track`.
     pub fn next<'a>(&'a self, ui: &'a mut egui::Ui) -> TrackCtx<'a> {
         let available_rect = ui.available_rect_before_wrap();
+        // Only assign pinned_track_index for tracks that are actually pinned (at the very top, y < 100px)
+        // This prevents regular tracks from getting a pinned_track_index even if they're near the top
+        // Regular tracks will call with_id() which sets track_id, so they'll use 4px spacing regardless
+        let pinned_track_index = if available_rect.min.y < 100.0 {
+            // Likely a pinned track - get and increment the index
+            Some(self.next_pinned_track_index())
+        } else {
+            // Regular track - don't increment the counter
+            None
+        };
         TrackCtx {
             tracks: self,
             ui,
@@ -71,8 +77,10 @@ impl TracksCtx {
             track_id: None,
             is_first_track: false,
             is_last_track: false,
+            pinned_track_index,
         }
     }
+    
 }
 
 impl<'a> TrackCtx<'a> {
@@ -111,14 +119,13 @@ impl<'a> TrackCtx<'a> {
                 // IMPORTANT: Both ruler and tracks use the same header_full_rect, so they have the same width
                 // The rect.max.x (header_right_x) is the same for both, ensuring the grey border aligns perfectly
                 
-                // FIX: For the first track, compensate for the 2px spacer added in ScrollArea
-                // The spacer is needed for track content (border visibility) but shouldn't affect header alignment
-                // Subtract 2px from header's starting position for first track only
-                let header_start_y = if self.is_first_track {
-                    self.available_rect.min.y - 2.0
-                } else {
-                    self.available_rect.min.y
-                };
+                // Store original header rect boundaries before modifying rect
+                // This ensures the border is drawn at the same x position for both ruler and tracks
+                let header_right_x = rect.max.x; // Right edge of header (where grey border will be drawn)
+                
+                // Header starts at the available rect's top (with offset for first track)
+                let track_offset_y = if self.is_first_track { 10.0 } else { 0.0 };
+                let header_start_y = self.available_rect.min.y + track_offset_y;
                 rect.min.y = header_start_y;
                 // Constrain header height to available rect to prevent overlap with next track
                 rect.max.y = rect.min.y.min(self.available_rect.max.y);
@@ -127,26 +134,27 @@ impl<'a> TrackCtx<'a> {
                 // This ensures the background is behind the widgets
                 let vis = self.ui.style().noninteractive();
                 
-                // Store original header rect boundaries before modifying rect
-                // This ensures the border is drawn at the same x position for both ruler and tracks
-                let header_right_x = rect.max.x; // Right edge of header (where grey border will be drawn)
-                
                 // FIX: For the ruler (pinned track), constrain header background to only the header area
                 // The ruler's header should only cover its own header, not extend into the track content or beyond
-                // Track 1 starts at ruler bottom (111.00) + 4px spacing = 115.00, so we must stop well before that
+                // Use a reasonable fixed height estimate (20px matches ruler content height: 4px padding + ~16px label)
+                const RULER_HEADER_HEIGHT_ESTIMATE: f32 = 20.0; // Matches ruler content height (RULER_HEIGHT)
+                // For regular tracks, estimate header height (input field + buttons + padding ≈ 28-32px)
+                const TRACK_HEADER_HEIGHT_ESTIMATE: f32 = 30.0; // Typical height for track name input + S/M buttons + padding
                 let header_fill_max_y = if self.track_id.is_none() {
-                    // Ruler: only cover the header area itself (typically ~20-24px)
-                    // Use rect.max.y which is the header rect's bottom, not the full available_rect
-                    rect.max.y
+                    // Ruler: only cover the header area itself - use fixed estimate
+                    // This ensures it stops at the ruler's header bottom, not extending into timeline content
+                    header_start_y + RULER_HEADER_HEIGHT_ESTIMATE
                 } else {
-                    // Regular tracks: can use full available height (they're in ScrollArea)
-                    self.available_rect.max.y
+                    // Regular tracks: only cover the header area itself - use fixed estimate
+                    // This ensures it stops at the track's header bottom, not extending into timeline content
+                    // This prevents the shadow effect on the grey border from background extending too far down
+                    header_start_y + TRACK_HEADER_HEIGHT_ESTIMATE
                 };
                 
                 // FIX: Header background should extend to the right border (header_right_x) before grid lines start
                 // This ensures the gray rectangle goes all the way to the grey vertical border
                 let header_fill_rect = egui::Rect::from_min_max(
-                    egui::Pos2::new(rect.min.x, rect.min.y),
+                    egui::Pos2::new(rect.min.x, header_start_y),
                     egui::Pos2::new(header_right_x, header_fill_max_y),
                 );
                 
@@ -177,10 +185,13 @@ impl<'a> TrackCtx<'a> {
         on_track_click: Option<impl FnOnce(String)>,
         is_selected: bool,
     ) {
+        // For first track, add 10px offset for testing
+        let track_offset_y = if self.is_first_track { 10.0 } else { 0.0 };
+        
         // The UI and area for the track timeline.
         let track_timeline_rect = {
             let mut rect = self.tracks.timeline.full_rect;
-            rect.min.y = self.available_rect.min.y;
+            rect.min.y = self.available_rect.min.y + track_offset_y;
             rect
         };
         
@@ -194,11 +205,11 @@ impl<'a> TrackCtx<'a> {
             let estimated_full_track_rect = egui::Rect::from_min_max(
                 egui::Pos2::new(
                     self.tracks.full_rect.min.x, // Left edge (includes header)
-                    self.available_rect.min.y,    // Top of this track
+                    self.available_rect.min.y + track_offset_y,    // Top of this track (with offset)
                 ),
                 egui::Pos2::new(
                     self.tracks.full_rect.max.x,              // Right edge (full width)
-                    self.available_rect.min.y + estimated_full_track_height, // Bottom of this track
+                    self.available_rect.min.y + track_offset_y + estimated_full_track_height, // Bottom of this track
                 ),
             );
             self.ui.painter().rect_filled(estimated_full_track_rect, 0.0, selection_overlay);
@@ -227,11 +238,11 @@ impl<'a> TrackCtx<'a> {
         let full_track_rect = egui::Rect::from_min_max(
             egui::Pos2::new(
                 self.tracks.full_rect.min.x, // Left edge (includes header)
-                self.available_rect.min.y,    // Top of this track
+                self.available_rect.min.y + track_offset_y,    // Top of this track (with offset for first track)
             ),
             egui::Pos2::new(
                 self.tracks.full_rect.max.x,              // Right edge (full width)
-                self.available_rect.min.y + full_track_height, // Bottom of this track (NOT including spacing)
+                self.available_rect.min.y + track_offset_y + full_track_height, // Bottom of this track (NOT including spacing)
             ),
         );
         
@@ -277,26 +288,17 @@ impl<'a> TrackCtx<'a> {
                     // Selection should match exactly from top border to bottom border
                     // Top border is at full_track_rect.min.y, bottom border is at full_track_rect.max.y
                     // But selection only spans the timeline area (not header), so use timeline x coordinates
-                    // FIX: For first track, pull selection up by 1px to align properly
-                    let selection_top = if self.is_first_track {
-                        full_track_rect.min.y - 1.0
-                    } else {
-                        full_track_rect.min.y
-                    };
+                    // Selection must never overflow the track bounds - clamp to track rect
+                    let selection_top = full_track_rect.min.y; // Always start at track top, never above
+                    let selection_bottom = full_track_rect.max.y; // Always end at track bottom, never below
                     let selection_rect = egui::Rect::from_min_max(
                         egui::Pos2::new(start_x.min(end_x), selection_top),
-                        egui::Pos2::new(start_x.max(end_x), full_track_rect.max.y),
+                        egui::Pos2::new(start_x.max(end_x), selection_bottom),
                     );
                     
-                    // FIX: For first track, don't draw the selection here - only store it for redraw
-                    // This prevents drawing it twice (once here, once in redraw)
-                    if self.is_first_track {
-                        *self.tracks.first_track_selection_rect.borrow_mut() = Some(selection_rect);
-                    } else {
-                        // For other tracks, draw normally
-                        let selection_fill = egui::Color32::from_rgba_unmultiplied(100, 150, 255, 100);
-                        self.ui.painter().rect_filled(selection_rect, 0.0, selection_fill);
-                    }
+                    // Draw selection normally (no special case for first track)
+                    let selection_fill = egui::Color32::from_rgba_unmultiplied(100, 150, 255, 100);
+                    self.ui.painter().rect_filled(selection_rect, 0.0, selection_fill);
                 }
             }
         }
@@ -328,8 +330,7 @@ impl<'a> TrackCtx<'a> {
         };
         
         if self.track_id.is_none() {
-            // Ruler: draw complete border (all 4 sides)
-            // There's 4px spacing after ruler, so bottom border will be separate from Track 1's top border
+            // Pinned tracks: draw complete border (all 4 sides) for both Ruler and Marker
             let left_top = egui::Pos2::new(full_track_rect.min.x, full_track_rect.min.y);
             let right_top = egui::Pos2::new(full_track_rect.max.x, full_track_rect.min.y);
             let left_bottom = egui::Pos2::new(full_track_rect.min.x, full_track_rect.max.y);
@@ -341,7 +342,7 @@ impl<'a> TrackCtx<'a> {
             self.ui.painter().line_segment([left_top, left_bottom], pink_border);
             // Right border
             self.ui.painter().line_segment([right_top, right_bottom], pink_border);
-            // Bottom border (separated by 4px spacing from Track 1's top border)
+            // Bottom border
             self.ui.painter().line_segment([left_bottom, right_bottom], pink_border);
             
             // Draw left grey border for the ruler header area to match the header's right border position
@@ -359,35 +360,31 @@ impl<'a> TrackCtx<'a> {
         } else {
             // Regular tracks: draw complete borders around track content (all 4 sides)
             // Since we have 4px spacing between tracks, each track gets its own complete border
-            let left_top = egui::Pos2::new(full_track_rect.min.x, full_track_rect.min.y);
-            let right_top = egui::Pos2::new(full_track_rect.max.x, full_track_rect.min.y);
             let left_bottom = egui::Pos2::new(full_track_rect.min.x, full_track_rect.max.y);
             let right_bottom = egui::Pos2::new(full_track_rect.max.x, full_track_rect.max.y);
             
-            
             // Draw borders in order: left, right, bottom, then top LAST to ensure it's on top of everything
-            // This is especially important for Track 1's top border which might be affected by grid lines
+            let left_top = egui::Pos2::new(full_track_rect.min.x, full_track_rect.min.y);
+            let right_top = egui::Pos2::new(full_track_rect.max.x, full_track_rect.min.y);
+            
             // Left border
             self.ui.painter().line_segment([left_top, left_bottom], pink_border);
             // Right border
             self.ui.painter().line_segment([right_top, right_bottom], pink_border);
             // Bottom border (at the bottom of the track, before spacing)
             self.ui.painter().line_segment([left_bottom, right_bottom], pink_border);
-            // Top border: ensure it's drawn with pixel-perfect alignment and full visibility
-            // FIX: For first track, don't draw the top border here - only store it for redraw
-            // This prevents drawing it twice (once here, once in redraw)
-            if !self.is_first_track {
-                // Draw it slightly inside the rect (0.5px) to ensure it's not clipped and appears the same as other borders
-                let top_border_y = full_track_rect.min.y + 0.5;
-                let top_left = egui::Pos2::new(full_track_rect.min.x, top_border_y);
-                let top_right = egui::Pos2::new(full_track_rect.max.x, top_border_y);
-                self.ui.painter().line_segment([top_left, top_right], pink_border);
-            }
+            // Top border: draw it slightly inside the rect (0.5px) to ensure it's not clipped
+            let top_border_y = full_track_rect.min.y + 0.5;
+            let top_left = egui::Pos2::new(full_track_rect.min.x, top_border_y);
+            let top_right = egui::Pos2::new(full_track_rect.max.x, top_border_y);
+            self.ui.painter().line_segment([top_left, top_right], pink_border);
             
             // Draw right border for the header area to separate it from the timeline/grid
             if let Some(header_rect) = self.tracks.header_full_rect {
                 let header_right_x = header_rect.max.x;
-                let header_border_top = egui::Pos2::new(header_right_x, full_track_rect.min.y);
+                // Header border starts at the track's top (with offset for first track)
+                let header_border_top_y = full_track_rect.min.y;
+                let header_border_top = egui::Pos2::new(header_right_x, header_border_top_y);
                 let header_border_bottom = egui::Pos2::new(header_right_x, full_track_rect.max.y);
                 // Use grey border for the header divider to differentiate from track borders
                 let header_border = egui::Stroke {
@@ -402,18 +399,37 @@ impl<'a> TrackCtx<'a> {
         // space occuppied. The spacing is added AFTER the border is drawn, so borders are tight around tracks.
         let w = self.tracks.full_rect.width();
         let h = full_track_height;
-        // Add 4px spacing after track (except for last track)
-        // Ruler also adds spacing so Track 1's available_rect is correctly positioned
-        // This spacing is separate from the track rect, so borders don't include it
-        // For the ruler (track_id is None), ensure spacing is exactly 4px to match track spacing
-        let spacing_after = if self.is_last_track { 0.0 } else { 4.0 };
+        // Add spacing after track (except for last track)
+        // Ruler (first pinned track, index 0) uses 4px spacing, Marker (second pinned track, index 1) uses 10px spacing
+        // Regular tracks ALWAYS use 4px spacing
+        // This spacing ensures the next track starts at this track's bottom border + spacing
+        // Pinned tracks have track_id = None (they don't call with_id()), regular tracks have track_id = Some(...)
+        let spacing_after = if self.is_last_track {
+            0.0
+        } else if self.track_id.is_none() && self.pinned_track_index.is_some() {
+            // Pinned track: Ruler (index 0) uses 4px, Marker (index 1) uses 10px
+            let pinned_index = self.pinned_track_index.unwrap();
+            if pinned_index == 0 {
+                // Ruler (first pinned track): 4px spacing
+                4.0
+            } else {
+                // Marker (second pinned track): 10px spacing
+                10.0
+            }
+        } else {
+            // Regular tracks: ALWAYS 4px spacing (regardless of pinned_track_index)
+            4.0
+        };
         // Add spacing directly to parent UI (not in scope) to ensure it's properly consumed
         // This ensures the next track's available_rect is correctly positioned
+        // The space added must account for the track offset so the next track starts at:
+        // current track's actual bottom (including offset) + 4px spacing
         self.ui.spacing_mut().item_spacing.y = 0.0;
         self.ui.spacing_mut().interact_size.y = 0.0;
         self.ui.horizontal(|ui| ui.add_space(w));
-        // For ruler, ensure we add exactly the track height + 4px spacing (same as regular tracks)
-        self.ui.add_space(h + spacing_after);
+        // Add space equal to: track height + offset + spacing
+        // This ensures next track starts at: (current track top + offset + height) + 4px = current track bottom + 4px
+        self.ui.add_space(h + track_offset_y + spacing_after);
     }
 }
 
@@ -436,8 +452,20 @@ impl TracksCtx {
             full_rect,
             header_full_rect,
             timeline,
-            first_track_selection_rect: std::cell::RefCell::new(None),
+            pinned_track_index: Cell::new(0),
         }
+    }
+    
+    /// Reset the pinned track counter (called when starting pinned tracks)
+    pub(crate) fn reset_pinned_track_index(&self) {
+        self.pinned_track_index.set(0);
+    }
+    
+    /// Get and increment the pinned track index (for pinned tracks only)
+    pub(crate) fn next_pinned_track_index(&self) -> usize {
+        let index = self.pinned_track_index.get();
+        self.pinned_track_index.set(index + 1);
+        index
     }
 }
 
@@ -456,9 +484,6 @@ impl SetPlayhead {
             timeline_rect,
             tracks_top,
             tracks_bottom,
-            first_track_top_border_y: Some(tracks_top + 0.5), // First track top border y position
-            full_rect: None,
-            first_track_selection_rect: None,
             bottom_bar_rect: None,
             top_panel_rect: None,
         }
@@ -476,25 +501,4 @@ impl SetPlayhead {
         self.tracks_bottom
     }
 
-    /// Redraw the first track's top border to ensure it's visible on top of everything.
-    /// Uses the full width including header area (same as the original track border).
-    /// Also redraws the selection if it exists to ensure it's visible above everything.
-    pub(crate) fn redraw_first_track_top_border(&self, ui: &mut egui::Ui) {
-        if let (Some(border_y), Some(full_rect)) = (self.first_track_top_border_y, self.full_rect) {
-            let pink_border = egui::Stroke {
-                width: 1.0,
-                color: egui::Color32::from_rgb(255, 192, 203), // Pink
-            };
-            // Draw across full width including header (same as original track border)
-            let top_left = egui::Pos2::new(full_rect.min.x, border_y);
-            let top_right = egui::Pos2::new(full_rect.max.x, border_y);
-            ui.painter().line_segment([top_left, top_right], pink_border);
-        }
-        
-        // FIX: Redraw the first track's selection after the border to ensure it's visible
-        if let Some(selection_rect) = self.first_track_selection_rect {
-            let selection_fill = egui::Color32::from_rgba_unmultiplied(100, 150, 255, 100);
-            ui.painter().rect_filled(selection_rect, 0.0, selection_fill);
-        }
-    }
 }
