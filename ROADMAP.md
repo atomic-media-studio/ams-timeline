@@ -5,7 +5,7 @@
 - [ ] Selection on Right-Mouse click (dropdown)
 - [ ] List of keyboard commands
 - [ ] Copy/Paste Blocks between tracks
-- [ ] Multi-select Blocks/Tracks (Ctrl+Click, Shift+Click)
+- [ ] Multi-select Blocks (Shift+Click)
 - [ ] Snap to grid
 - [ ] Block resizing with snap to grid
 - [ ] Resize tracks (shift all)
@@ -24,3 +24,5 @@
 - [x] Fit Blocks on Tracks equally
 - [x] Marker track
 - [x] Scroll the Tracks
+- [x] Multi-select Tracks (Shift+Click)
+

@@ -182,7 +182,7 @@ impl<'a> TrackCtx<'a> {
         track: impl FnOnce(&TimelineCtx, &mut egui::Ui),
         playhead_api: Option<&dyn crate::playhead::PlayheadApi>,
         selection_api: Option<&dyn crate::interaction::TrackSelectionApi>,
-        on_track_click: Option<impl FnOnce(String)>,
+        on_track_click: Option<impl FnOnce(String, bool)>,
         is_selected: bool,
     ) {
         // For first track, add 10px offset for testing
@@ -322,7 +322,8 @@ impl<'a> TrackCtx<'a> {
                         if full_track_rect.contains(pos) {
                             // Select track on any click within the full track area (header + content)
                             // This includes the input string area and the timeline content area
-                            on_click(track_id.clone());
+                            let shift_pressed = self.ui.input(|i| i.modifiers.shift);
+                            on_click(track_id.clone(), shift_pressed);
                         }
                     }
                 }

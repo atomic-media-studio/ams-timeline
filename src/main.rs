@@ -40,6 +40,7 @@ struct TrackManager {
     track_ids: RefCell<Vec<String>>,
     track_selections: RefCell<HashMap<String, (f32, f32)>>,
     selected_track_id: RefCell<Option<String>>,
+    selected_track_ids: RefCell<Vec<String>>,
     drag_start_tick: RefCell<Option<(String, f32)>>,
     pending_add_track: RefCell<bool>,
     track_solo: RefCell<HashMap<String, bool>>, // Track solo state (S button)
@@ -53,6 +54,7 @@ impl TrackManager {
             track_ids: RefCell::new(Vec::new()),
             track_selections: RefCell::new(HashMap::new()),
             selected_track_id: RefCell::new(None),
+            selected_track_ids: RefCell::new(Vec::new()),
             drag_start_tick: RefCell::new(None),
             pending_add_track: RefCell::new(false),
             track_solo: RefCell::new(HashMap::new()),
@@ -200,31 +202,41 @@ impl TimelineController {
         }
     }
     
-    /// Remove the currently selected track
+    /// Remove all currently selected tracks (or the primary selected one if only one exists).
     fn remove_selected_track(&self, model: &TimelineModel) {
-        let selected_id = model.tracks.selected_track_id.borrow().clone();
-        
-        if let Some(track_id) = selected_id {
-            // Remove from track_ids (ordered list)
-            let mut track_ids = model.tracks.track_ids.borrow_mut();
-            track_ids.retain(|id| id != &track_id);
-            
-            // Remove from track_names
-            model.tracks.track_names.borrow_mut().remove(&track_id);
-            
-            // Remove from track_selections
-            model.tracks.track_selections.borrow_mut().remove(&track_id);
-            
-            // Remove solo and mute states
-            model.tracks.track_solo.borrow_mut().remove(&track_id);
-            model.tracks.track_mute.borrow_mut().remove(&track_id);
-            
-            // Remove blocks for this track
-            model.blocks.blocks.borrow_mut().remove(&track_id);
-            
-            // Clear selection if the removed track was selected
-            *model.tracks.selected_track_id.borrow_mut() = None;
+        let mut ids_to_remove = model.tracks.selected_track_ids.borrow().clone();
+        if ids_to_remove.is_empty() {
+            if let Some(track_id) = model.tracks.selected_track_id.borrow().clone() {
+                ids_to_remove.push(track_id);
+            }
         }
+        if ids_to_remove.is_empty() {
+            return;
+        }
+
+        // Remove from track_ids (ordered list)
+        model.tracks
+            .track_ids
+            .borrow_mut()
+            .retain(|id| !ids_to_remove.contains(id));
+
+        // Remove per-track data for all selected tracks
+        let mut track_names = model.tracks.track_names.borrow_mut();
+        let mut track_selections = model.tracks.track_selections.borrow_mut();
+        let mut track_solo = model.tracks.track_solo.borrow_mut();
+        let mut track_mute = model.tracks.track_mute.borrow_mut();
+        let mut blocks = model.blocks.blocks.borrow_mut();
+        for track_id in &ids_to_remove {
+            track_names.remove(track_id);
+            track_selections.remove(track_id);
+            track_solo.remove(track_id);
+            track_mute.remove(track_id);
+            blocks.remove(track_id);
+        }
+
+        // Clear selection state after removal.
+        model.tracks.selected_track_ids.borrow_mut().clear();
+        *model.tracks.selected_track_id.borrow_mut() = None;
     }
     
     /// Add a block to the selected track at the current playhead position
@@ -571,6 +583,13 @@ impl eframe::App for TimelineApp {
         // Update playhead position if playing (before rendering)
         self.update_playhead_position(ctx);
         
+        // Space toggles Play/Stop (same behavior as clicking the buttons).
+        // Ignore while typing into a text field.
+        if !ctx.wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Space)) {
+            let is_playing = *self.model.playback.is_playing.borrow();
+            *self.model.playback.is_playing.borrow_mut() = !is_playing;
+        }
+        
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.heading("web-timeline");
@@ -597,7 +616,7 @@ impl eframe::App for TimelineApp {
                         },
                         None,
                         None,
-                        None::<fn(String)>, // No track click handler for ruler
+                        None::<fn(String, bool)>, // No track click handler for ruler
                         false, // Ruler is never selected
                     );
                     
@@ -616,7 +635,7 @@ impl eframe::App for TimelineApp {
                         },
                         None,
                         None,
-                        None::<fn(String)>, // No track click handler for marker
+                        None::<fn(String, bool)>, // No track click handler for marker
                         false, // Marker is never selected
                     );
                 })
@@ -633,14 +652,14 @@ impl eframe::App for TimelineApp {
                         track_names.clone()
                     };
                     
-                    // Get selected track ID before the loop
-                    let selected_track_id = self.model.tracks.selected_track_id.borrow().clone();
+                    // Get selected track IDs before the loop
+                    let selected_track_ids = self.model.tracks.selected_track_ids.borrow().clone();
                     
                     let total_tracks = track_ids_vec.len();
                     for (index, track_id) in track_ids_vec.iter().enumerate() {
                         let track_name = track_names_map.get(track_id).cloned().unwrap_or_else(|| format!("Track {}", track_id));
                         let track_id_clone = track_id.clone();
-                        let is_selected = selected_track_id.as_ref() == Some(track_id);
+                        let is_selected = selected_track_ids.contains(track_id);
                         let is_first_track = index == 0;
                         let is_last_track = index == total_tracks - 1;
                         
@@ -1062,9 +1081,18 @@ impl eframe::App for TimelineApp {
                                 selection_api,
                                 Some({
                                     let selected_track_id_ref = &self.model.tracks.selected_track_id;
-                                    move |track_id: String| {
-                                        // Set this track as selected
-                                        *selected_track_id_ref.borrow_mut() = Some(track_id);
+                                    let selected_track_ids_ref = &self.model.tracks.selected_track_ids;
+                                    move |track_id: String, shift_pressed: bool| {
+                                        if shift_pressed {
+                                            let mut selected_ids = selected_track_ids_ref.borrow_mut();
+                                            if !selected_ids.contains(&track_id) {
+                                                selected_ids.push(track_id.clone());
+                                            }
+                                            *selected_track_id_ref.borrow_mut() = Some(track_id);
+                                        } else {
+                                            *selected_track_ids_ref.borrow_mut() = vec![track_id.clone()];
+                                            *selected_track_id_ref.borrow_mut() = Some(track_id);
+                                        }
                                     }
                                 }),
                                 is_selected,
@@ -1090,7 +1118,7 @@ impl eframe::App for TimelineApp {
                     || self.request_add_track(), // Add track callback
                     || self.remove_selected_track(), // Remove track callback
                     || self.add_block(), // Add block callback
-                    || self.model.tracks.selected_track_id.borrow().is_some(), // Has selected track
+                    || !self.model.tracks.selected_track_ids.borrow().is_empty(), // Has selected track
                     || *self.model.total_seconds.borrow(), // Get total_seconds
                     {
                         // Set total_seconds with minimum of 16 or rightmost block end

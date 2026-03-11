@@ -136,7 +136,7 @@ pub fn set(
         // Draw from ruler's top to the computed bottom limit.
         // By default this ends exactly at the last track border.
         let top_pos = egui::Pos2::new(playhead_x, draw_top);
-        let bottom_pos = egui::Pos2::new(playhead_x, bottom);
+        let bottom_pos = egui::Pos2::new(playhead_x, bottom + 3.0);
         ui.painter().line_segment([top_pos, bottom_pos], stroke);
     }
 

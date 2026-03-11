@@ -459,7 +459,7 @@ impl SetPlayhead {
             
             // Draw global panel if visible (100px height, above everything)
             if *global_panel_visible {
-                const PANEL_HEIGHT: f32 = 100.0;
+                const PANEL_HEIGHT: f32 = 200.0;
                 let panel_rect = egui::Rect::from_min_max(
                     egui::Pos2::new(bottom_bar_rect.min.x, bottom_bar_rect.min.y - PANEL_HEIGHT),
                     egui::Pos2::new(bottom_bar_rect.max.x, bottom_bar_rect.min.y),
@@ -480,7 +480,17 @@ impl SetPlayhead {
                     // Column 1: "Global Panel" label
                     ui.vertical(|ui| {
                         ui.set_width(panel_rect.width() / 6.0);
-                        ui.label("Global Panel");
+                        ui.label(egui::RichText::new("Keyboard Controls:").size(10.0));
+                        ui.add_space(2.0);
+                        ui.label(egui::RichText::new("Space: Play/Pause").size(10.0));
+                        ui.add_space(2.0);
+                        ui.label(egui::RichText::new("Left Mouse: Move Playhead/Select Track").size(10.0));
+                        ui.add_space(2.0);
+                        ui.label(egui::RichText::new("Shift + Mouse Wheel: Zoom Left/Right").size(10.0));
+                        ui.add_space(2.0);
+                        ui.label(egui::RichText::new("Ctrl + Mouse Wheel: Zoom In/Out").size(10.0));
+                        ui.add_space(2.0);
+                        ui.label(egui::RichText::new("Mouse Wheel: Scroll Up/Down").size(10.0));
                     });
                     
                     // Column 2: Available for widgets
