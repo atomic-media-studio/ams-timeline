@@ -475,61 +475,55 @@ impl SetPlayhead {
                         .layout(egui::Layout::top_down(egui::Align::Min)),
                 );
                 
-                // Divide panel into 6 columns
+                // Divide panel into 4 columns
                 panel_ui.horizontal(|ui| {
                     // Column 1: "Global Panel" label
-                    ui.vertical(|ui| {
-                        ui.set_width(panel_rect.width() / 6.0);
-                        ui.label(egui::RichText::new("Keyboard Controls:").size(10.0));
-                        ui.add_space(2.0);
-                        ui.label(egui::RichText::new("Space: Play/Pause").size(10.0));
-                        ui.add_space(2.0);
-                        ui.label(egui::RichText::new("Left Mouse: Move Playhead/Select Track").size(10.0));
-                        ui.add_space(2.0);
-                        ui.label(egui::RichText::new("Shift + Mouse Wheel: Zoom Left/Right").size(10.0));
-                        ui.add_space(2.0);
-                        ui.label(egui::RichText::new("Ctrl + Mouse Wheel: Zoom In/Out").size(10.0));
-                        ui.add_space(2.0);
-                        ui.label(egui::RichText::new("Mouse Wheel: Scroll Up/Down").size(10.0));
+                    ui.horizontal(|ui| {
+                        ui.add_space(4.0);
+                        ui.vertical(|ui| {
+                            ui.set_width((panel_rect.width() / 4.0 - 4.0).max(0.0));
+                            ui.add_space(4.0);
+                            ui.label(egui::RichText::new("Keyboard:").size(12.0));
+                            ui.add_space(2.0);
+                            ui.label(egui::RichText::new("Space: Play/Pause").size(12.0));
+                            ui.add_space(2.0);
+                            ui.label(egui::RichText::new("Left Mouse: Move Playhead/Select Track").size(12.0));
+                            ui.add_space(2.0);
+                            ui.label(egui::RichText::new("Shift + Mouse Wheel: Zoom Left/Right").size(12.0));
+                            ui.add_space(2.0);
+                            ui.label(egui::RichText::new("Ctrl + Mouse Wheel: Zoom In/Out").size(12.0));
+                            ui.add_space(2.0);
+                            ui.label(egui::RichText::new("Mouse Wheel: Scroll Up/Down").size(12.0));
+                        });
                     });
                     
                     // Column 2: Available for widgets
                     ui.vertical(|ui| {
-                        ui.set_width(panel_rect.width() / 6.0);
+                        ui.set_width(panel_rect.width() / 4.0);
                         // Add widgets here
                     });
                     
                     // Column 3: Available for widgets
                     ui.vertical(|ui| {
-                        ui.set_width(panel_rect.width() / 6.0);
+                        ui.set_width(panel_rect.width() / 4.0);
                         // Add widgets here
                     });
                     
                     // Column 4: Available for widgets
                     ui.vertical(|ui| {
-                        ui.set_width(panel_rect.width() / 6.0);
+                        ui.set_width(panel_rect.width() / 4.0);
                         // Add widgets here
                     });
                     
-                    // Column 5: Available for widgets
-                    ui.vertical(|ui| {
-                        ui.set_width(panel_rect.width() / 6.0);
-                        // Add widgets here
-                    });
-                    
-                    // Column 6: Available for widgets
-                    ui.vertical(|ui| {
-                        ui.set_width(panel_rect.width() / 6.0);
-                        // Add widgets here
-                    });
+                   
                 });
                 
                 // Draw 1px grey vertical borders between columns (100% height)
                 let grey_border = egui::Stroke {
                     width: 1.0,
-                    color: egui::Color32::from_rgb(128, 128, 128), // Grey
+                    color: egui::Color32::from_rgb(100, 100, 100), // Grey
                 };
-                let column_width = panel_rect.width() / 6.0;
+                let column_width = panel_rect.width() / 4.0;
                 for i in 1..6 {
                     let x = panel_rect.min.x + (column_width * i as f32);
                     let top = egui::Pos2::new(x, panel_rect.min.y);

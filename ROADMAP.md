@@ -3,7 +3,6 @@
 ## Ongoing
 
 - [ ] Selection on Right-Mouse click (dropdown)
-- [ ] List of keyboard commands
 - [ ] Copy/Paste Blocks between tracks
 - [ ] Multi-select Blocks (Shift+Click)
 - [ ] Snap to grid
@@ -25,4 +24,5 @@
 - [x] Marker track
 - [x] Scroll the Tracks
 - [x] Multi-select Tracks (Shift+Click)
+- [x] List of keyboard commands
 
