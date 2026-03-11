@@ -70,9 +70,6 @@ impl Timeline {
             egui::Pos2::new(full_rect.max.x, full_rect.max.y),
         );
 
-        // Handle scroll and zoom interactions
-        interaction::handle_scroll_and_zoom(ui, timeline_rect, timeline);
-
         // Draw the background.
         let vis = ui.style().noninteractive();
         let bg_stroke = egui::Stroke {
@@ -195,6 +192,7 @@ impl Show {
             ref ruler_bottom,
         } = self;
         let rect = ui.available_rect_before_wrap();
+        const TRACKS_BOTTOM_PADDING: f32 = 10.0;
         // Ensure no spacing between pinned tracks (ruler) and regular tracks
         ui.spacing_mut().item_spacing.y = 0.0;
         ui.spacing_mut().interact_size.y = 0.0;
@@ -206,29 +204,19 @@ impl Show {
         let tracks_start_y = ruler_bottom.as_ref().copied().unwrap_or(rect.top());
         
         let res = egui::ScrollArea::vertical()
-            .max_height(rect.height())
+            .max_height((rect.height() - TRACKS_BOTTOM_PADDING).max(0.0))
             .enable_scrolling(enable_scrolling)
             .animated(true)
-            .stick_to_bottom(true) // stick to new tracks as they're added
-            .show_viewport(ui, |ui, view| {
-                // Ensure ScrollArea content starts exactly where tracks should begin
-                // The marker (last pinned track) already adds 10px spacing, so tracks start at ruler_bottom (which is marker bottom + 10px)
-                let viewport_ui_top = ui.available_rect_before_wrap().top();
-                let gap = viewport_ui_top - tracks_start_y;
-                if gap != 0.0 {
-                    // Adjust to align exactly with tracks_start_y
-                    ui.add_space(-gap);
-                }
-                
-                // Ensure no spacing between tracks - set all spacing to 0
-                // The marker (last pinned track) already adds 10px spacing, so we don't add any here
+            .stick_to_bottom(true)
+            .show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 ui.spacing_mut().interact_size.y = 0.0;
                 ui.spacing_mut().window_margin = egui::Margin::same(0.0);
+                let view = ui.available_rect_before_wrap();
                 tracks_fn(tracks, view, ui, playhead_api, selection_api);
             });
         let timeline_rect = tracks.timeline.full_rect;
-        
+
         // Calculate tracks_bottom: the actual bottom of the last track's border
         // tracks_start_y is exactly 10px below marker's bottom border (ruler_bottom)
         let tracks_bottom = if res.content_size.y < 1.0 {
@@ -258,6 +246,12 @@ impl SetPlayhead {
         playhead: crate::playhead::Playhead,
     ) -> &Self {
         crate::playhead::set(ui, info, self.timeline_rect(), self.tracks_top(), self.tracks_bottom(), playhead);
+        self
+    }
+
+    /// Run scroll/zoom after track layout so vertical scroll goes to ScrollArea first.
+    pub fn run_scroll_and_zoom(&self, ui: &mut egui::Ui, timeline: &mut dyn crate::TimelineApi) -> &Self {
+        interaction::handle_scroll_and_zoom(ui, self.timeline_rect(), timeline);
         self
     }
 

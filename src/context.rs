@@ -189,11 +189,18 @@ impl<'a> TrackCtx<'a> {
         let track_offset_y = if self.is_first_track { 10.0 } else { 0.0 };
         
         // The UI and area for the track timeline.
-        let track_timeline_rect = {
-            let mut rect = self.tracks.timeline.full_rect;
-            rect.min.y = self.available_rect.min.y + track_offset_y;
-            rect
-        };
+        // Y-positions are derived from the inner ScrollArea `Ui` layout (`available_rect`)
+        // so they move correctly when the ScrollArea scrolls.
+        let track_timeline_rect = egui::Rect::from_min_max(
+            egui::Pos2::new(
+                self.tracks.timeline.full_rect.min.x,
+                self.available_rect.min.y + track_offset_y,
+            ),
+            egui::Pos2::new(
+                self.tracks.timeline.full_rect.max.x,
+                self.available_rect.min.y + track_offset_y + self.tracks.timeline.full_rect.height(),
+            ),
+        );
         
         // Draw selection overlay BEFORE track content so blocks appear on top (higher z-order)
         // Use estimated full track rect - overlay will cover full area, blocks drawn later will appear on top
@@ -238,10 +245,10 @@ impl<'a> TrackCtx<'a> {
         let full_track_rect = egui::Rect::from_min_max(
             egui::Pos2::new(
                 self.tracks.full_rect.min.x, // Left edge (includes header)
-                self.available_rect.min.y + track_offset_y,    // Top of this track (with offset for first track)
+                self.available_rect.min.y + track_offset_y, // Top of this track (with offset for first track)
             ),
             egui::Pos2::new(
-                self.tracks.full_rect.max.x,              // Right edge (full width)
+                self.tracks.full_rect.max.x, // Right edge (full width)
                 self.available_rect.min.y + track_offset_y + full_track_height, // Bottom of this track (NOT including spacing)
             ),
         );

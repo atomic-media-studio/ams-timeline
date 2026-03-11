@@ -133,10 +133,10 @@ pub fn set(
             width: 1.0,
             color: playhead_color,
         };
-        // Draw from ruler's top (draw_top) to tracks_bottom + 2px (extends 2px below last track's bottom border)
-        // This ensures the playhead is visible in the ruler and extends slightly below the last track
+        // Draw from ruler's top to the computed bottom limit.
+        // By default this ends exactly at the last track border.
         let top_pos = egui::Pos2::new(playhead_x, draw_top);
-        let bottom_pos = egui::Pos2::new(playhead_x, tracks_bottom + 2.0);
+        let bottom_pos = egui::Pos2::new(playhead_x, bottom);
         ui.painter().line_segment([top_pos, bottom_pos], stroke);
     }
 

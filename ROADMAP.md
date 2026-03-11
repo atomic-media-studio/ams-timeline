@@ -1,9 +1,8 @@
 # Timeline Project Roadmap
 
-## Objectives
+## Ongoing
 
-- [x] Fit Blocks on Tracks equally
-- [x] Marker track
+- [ ] Selection on Right-Mouse click (dropdown)
 - [ ] List of keyboard commands
 - [ ] Copy/Paste Blocks between tracks
 - [ ] Multi-select Blocks/Tracks (Ctrl+Click, Shift+Click)
@@ -18,3 +17,10 @@
 - [ ] Timeline markers/bookmarks (bookmark list with dropdown)
 - [ ] Focus zoom on playhead (horizontally centered)
 - [ ] Routing button "R" on Track header
+- [ ] Detailed markers
+
+## Completed
+
+- [x] Fit Blocks on Tracks equally
+- [x] Marker track
+- [x] Scroll the Tracks

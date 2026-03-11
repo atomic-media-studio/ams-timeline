@@ -1075,6 +1075,7 @@ impl eframe::App for TimelineApp {
                     Some(self as &dyn TrackSelectionApi),
                 )
                 .playhead(ui, self, Playhead::new())
+                .run_scroll_and_zoom(ui, self)
                 .top_panel_time(
                     ui,
                     Some(self as &dyn PlayheadApi),
