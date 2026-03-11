@@ -11,12 +11,14 @@ use crate::{context::TimelineCtx, ruler, types::MIN_STEP_GAP};
 /// - Maximum 10 lines per second (0.1 second intervals)
 /// - Automatically hides lines that are too close (less than MIN_STEP_GAP pixels apart)
 pub fn paint_grid(ui: &mut egui::Ui, timeline: &TimelineCtx, info: &dyn ruler::MusicalInfo) {
+    const TRACKS_BOTTOM_PADDING: f32 = 10.0;
     let vis = ui.style().noninteractive();
     let mut stroke = vis.bg_stroke;
     let second_color = stroke.color.linear_multiply(0.5); // Whole seconds - darker
     let subdivision_color = stroke.color.linear_multiply(0.25); // 0.1 second subdivisions - lighter
     
     let tl_rect = timeline.full_rect;
+    let grid_bottom = (tl_rect.bottom() - TRACKS_BOTTOM_PADDING).max(tl_rect.top());
     let visible_len = tl_rect.width();
     let ticks_per_point = info.ticks_per_point();
     let visible_ticks = ticks_per_point * visible_len;
@@ -88,7 +90,7 @@ pub fn paint_grid(ui: &mut egui::Ui, timeline: &TimelineCtx, info: &dyn ruler::M
         
         // Draw the line
         let a = egui::Pos2::new(x, tl_rect.top());
-        let b = egui::Pos2::new(x, tl_rect.bottom());
+        let b = egui::Pos2::new(x, grid_bottom);
         ui.painter().line_segment([a, b], stroke);
         
         last_x = x;

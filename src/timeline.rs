@@ -193,6 +193,7 @@ impl Show {
         } = self;
         let rect = ui.available_rect_before_wrap();
         const TRACKS_BOTTOM_PADDING: f32 = 10.0;
+        let tracks_viewport_height = (rect.height() - TRACKS_BOTTOM_PADDING).max(0.0);
         // Ensure no spacing between pinned tracks (ruler) and regular tracks
         ui.spacing_mut().item_spacing.y = 0.0;
         ui.spacing_mut().interact_size.y = 0.0;
@@ -217,8 +218,9 @@ impl Show {
             });
         let timeline_rect = tracks.timeline.full_rect;
 
-        // Calculate tracks_bottom: the actual bottom of the last track's border
-        // tracks_start_y is exactly 10px below marker's bottom border (ruler_bottom)
+        // Clamp playhead bottom to the visible tracks viewport so it does not overflow
+        // when tracks exceed the scroll area's visible height.
+        let tracks_viewport_bottom = tracks_start_y + tracks_viewport_height;
         let tracks_bottom = if res.content_size.y < 1.0 {
             // No tracks: use the position where first track would start (10px below marker's bottom border)
             tracks_start_y
@@ -226,7 +228,8 @@ impl Show {
             // Has tracks: calculate the actual bottom of the last track's border
             // content_size.y is the total height of all tracks (including their spacing)
             // Since the last track doesn't add spacing after itself, the bottom is at tracks_start_y + content_size.y
-            tracks_start_y + res.content_size.y
+            // but never below the visible scroll area bottom.
+            (tracks_start_y + res.content_size.y).min(tracks_viewport_bottom)
         };
         // Calculate tracks_top: where the first track starts (exactly 10px below marker's bottom border)
         let tracks_top = tracks_start_y;

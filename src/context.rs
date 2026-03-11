@@ -112,17 +112,11 @@ impl<'a> TrackCtx<'a> {
     /// `header_full_rect.max.x` for both, guaranteeing alignment.
     pub fn header(mut self, header: impl FnOnce(&mut egui::Ui)) -> Self {
         const LEFT_PADDING: f32 = 4.0;
+        const LEFT_COLUMN_WIDTH: f32 = 20.0;
         let header_h = self
             .tracks
             .header_full_rect
             .map(|mut rect| {
-                // IMPORTANT: Both ruler and tracks use the same header_full_rect, so they have the same width
-                // The rect.max.x (header_right_x) is the same for both, ensuring the grey border aligns perfectly
-                
-                // Store original header rect boundaries before modifying rect
-                // This ensures the border is drawn at the same x position for both ruler and tracks
-                let header_right_x = rect.max.x; // Right edge of header (where grey border will be drawn)
-                
                 // Header starts at the available rect's top (with offset for first track)
                 let track_offset_y = if self.is_first_track { 10.0 } else { 0.0 };
                 let header_start_y = self.available_rect.min.y + track_offset_y;
@@ -130,38 +124,12 @@ impl<'a> TrackCtx<'a> {
                 // Constrain header height to available rect to prevent overlap with next track
                 rect.max.y = rect.min.y.min(self.available_rect.max.y);
                 
-                // Fill the header area with background FIRST (before content) to prevent grid lines from showing through
-                // This ensures the background is behind the widgets
-                let vis = self.ui.style().noninteractive();
-                
-                // FIX: For the ruler (pinned track), constrain header background to only the header area
-                // The ruler's header should only cover its own header, not extend into the track content or beyond
-                // Use a reasonable fixed height estimate (20px matches ruler content height: 4px padding + ~16px label)
-                const RULER_HEADER_HEIGHT_ESTIMATE: f32 = 20.0; // Matches ruler content height (RULER_HEIGHT)
-                // For regular tracks, estimate header height (input field + buttons + padding ≈ 28-32px)
-                const TRACK_HEADER_HEIGHT_ESTIMATE: f32 = 30.0; // Typical height for track name input + S/M buttons + padding
-                let header_fill_max_y = if self.track_id.is_none() {
-                    // Ruler: only cover the header area itself - use fixed estimate
-                    // This ensures it stops at the ruler's header bottom, not extending into timeline content
-                    header_start_y + RULER_HEADER_HEIGHT_ESTIMATE
+                // Shift regular track header widgets right so they appear after the left column.
+                rect.min.x += if self.track_id.is_some() {
+                    LEFT_COLUMN_WIDTH + LEFT_PADDING
                 } else {
-                    // Regular tracks: only cover the header area itself - use fixed estimate
-                    // This ensures it stops at the track's header bottom, not extending into timeline content
-                    // This prevents the shadow effect on the grey border from background extending too far down
-                    header_start_y + TRACK_HEADER_HEIGHT_ESTIMATE
+                    LEFT_PADDING
                 };
-                
-                // FIX: Header background should extend to the right border (header_right_x) before grid lines start
-                // This ensures the gray rectangle goes all the way to the grey vertical border
-                let header_fill_rect = egui::Rect::from_min_max(
-                    egui::Pos2::new(rect.min.x, header_start_y),
-                    egui::Pos2::new(header_right_x, header_fill_max_y),
-                );
-                
-                self.ui.painter().rect_filled(header_fill_rect, 0.0, vis.bg_fill);
-                
-                // Add 4px left padding by adjusting the rect
-                rect.min.x += LEFT_PADDING;
                 let ui = &mut self.ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(rect)
@@ -252,6 +220,21 @@ impl<'a> TrackCtx<'a> {
                 self.available_rect.min.y + track_offset_y + full_track_height, // Bottom of this track (NOT including spacing)
             ),
         );
+
+        // Paint the left strip using the final track height as the single source of truth.
+        // Do not repaint the whole header here, otherwise it covers header widgets already drawn.
+        if let Some(header_rect) = self.tracks.header_full_rect {
+            if self.track_id.is_some() {
+                const LEFT_COLUMN_WIDTH: f32 = 20.0;
+                let left_column_rect = egui::Rect::from_min_max(
+                    egui::Pos2::new(header_rect.min.x, full_track_rect.min.y),
+                    egui::Pos2::new(header_rect.min.x + LEFT_COLUMN_WIDTH, full_track_rect.max.y),
+                );
+                self.ui
+                    .painter()
+                    .rect_filled(left_column_rect, 0.0, egui::Color32::from_gray(95));
+            }
+        }
         
         // Handle interaction for this track
         if let Some(track_id) = &self.track_id {
