@@ -13,3 +13,6 @@ eframe = "0.29"
 [[bin]]
 name = "timeline_demo"
 path = "src/main.rs"
+
+[target."cfg(windows)".dependencies]
+windows-version = "0.1.7"

@@ -93,6 +93,21 @@ impl BlockManager {
     }
 }
 
+/// On Windows 11 and newer, force egui dark mode so the UI matches other platforms when
+/// the OS is set to light theme. Other OS versions are unchanged.
+fn apply_platform_theme_overrides(cc: &eframe::CreationContext<'_>) {
+    #[cfg(windows)]
+    {
+        // Windows 11 client builds start at 22000 (vs Windows 10 which stays below).
+        let build = windows_version::OsVersion::current().build;
+        if build >= 22_000 {
+            cc.egui_ctx.set_theme(egui::Theme::Dark);
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = cc;
+}
+
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1200.0, 800.0]),
@@ -101,7 +116,10 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "ams-timeline",
         options,
-        Box::new(|_cc| Ok(Box::new(TimelineApp::default()) as Box<dyn eframe::App>)),
+        Box::new(|cc| {
+            apply_platform_theme_overrides(cc);
+            Ok(Box::new(TimelineApp::default()) as Box<dyn eframe::App>)
+        }),
     )
 }
 
